@@ -45,15 +45,11 @@
       </table>
       <h2 style="font-size: 18px; margin-bottom: 10px;">Vencedores Anteriores</h2>
       <ul id="past-winners" style="padding-left: 20px;"></ul>
-      <p id="error" style="color: red; margin-top: 20px;"></p>
-    </div>
-    <div id="winner-popup" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;">
-      <div style="background-color: #fff; padding: 20px; border: 1px solid #ccc; text-align: center;">
-        <h2 id="popup-title" style="font-size: 18px; margin-bottom: 10px;"></h2>
-        <p id="popup-address"></p>
-        <p id="popup-alias"></p>
-        <button onclick="closePopup()" style="padding: 10px; background-color: #007bff; color: #fff; border: none; cursor: pointer; margin-top: 10px;">Fechar</button>
+      <div id="last-winner" style="margin-top: 20px;">
+        <h2 style="font-size: 18px; margin-bottom: 10px;">Último Ganhador</h2>
+        <p id="last-winner-info"></p>
       </div>
+      <p id="error" style="color: red; margin-top: 20px;"></p>
     </div>
   </div>
 
@@ -189,6 +185,15 @@
           li.style.marginBottom = "5px";
           pastWinnersList.appendChild(li);
         });
+
+        // Exibir o último ganhador, se houver
+        if (pastWinners.length > 0) {
+          const lastWinner = pastWinners[pastWinners.length - 1];
+          const lastWinnerAlias = await contract.getAlias(lastWinner);
+          document.getElementById("last-winner-info").innerText = `Sorteio #${Number(count)}: ${lastWinner} (Alias: ${lastWinnerAlias || "N/A"})`;
+        } else {
+          document.getElementById("last-winner-info").innerText = "Nenhum ganhador ainda.";
+        }
       } catch (err) {
         showError("Erro ao carregar dados do contrato: " + err.message);
       }
@@ -218,7 +223,7 @@
       toggleButtons(true);
       try {
         const priceInWei = ethers.parseEther(newPrice);
-        const tx = await contract.setTicketPrice(priceInWei nudo);
+        const tx = await contract.setTicketPrice(priceInWei);
         await tx.wait();
         document.getElementById("new-ticket-price").value = "";
         showError("");
@@ -234,13 +239,7 @@
       toggleButtons(true);
       try {
         const tx = await contract.drawWinner();
-        const receipt = await tx.wait();
-        const winner = receipt.logs
-          .filter((log) => log.fragment && log.fragment.name === "WinnerDrawn")
-          .map((log) => contract.interface.parseLog(log).args.winner)[0];
-        const winnerAlias = await contract.getAlias(winner);
-        const raffleCount = Number(await contract.raffleCount());
-        showWinnerPopup(winner, winnerAlias || "Sem alias", raffleCount);
+        await tx.wait();
         showError("");
         await loadContractData();
       } catch (err) {
@@ -261,17 +260,6 @@
         showError("Erro ao reembolsar: " + err.message);
       }
       toggleButtons(false);
-    }
-
-    function showWinnerPopup(address, alias, raffleCount) {
-      document.getElementById("popup-title").innerText = `Vencedor do Sorteio #${raffleCount}`;
-      document.getElementById("popup-address").innerText = `Endereço: ${address}`;
-      document.getElementById("popup-alias").innerText = `Alias: ${alias}`;
-      document.getElementById("winner-popup").style.display = "flex";
-    }
-
-    function closePopup() {
-      document.getElementById("winner-popup").style.display = "none";
     }
 
     function showError(message) {
