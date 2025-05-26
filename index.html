@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sorteio do 0xGus - Admin</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.20.15/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.umd.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { ethers } = window.ethers;
+
+    // ABI do contrato
+    const contractABI = [
+      {"inputs":[],"stateMutability":"nonpayable","type":"constructor"},
+      {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"participant","type":"address"},{"indexed":false,"internalType":"string","name":"newAlias","type":"string"}],"name":"AliasUpdated","type":"event"},
+      {"anonymous":false,"inputs":[{"indexed":false,"internalType":"uint256","name":"raffleNumber","type":"uint256"}],"name":"RaffleStarted","type":"event"},
+      {"anonymous":false,"inputs":[{"indexed":false,"internalType":"uint256","name":"newPrice","type":"uint256"}],"name":"TicketPriceUpdated","type":"event"},
+      {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"participant","type":"address"},{"indexed":false,"internalType":"uint256","name":"quantity","type":"uint256"},{"indexed":false,"internalType":"string","name":"_alias","type":"string"}],"name":"TicketPurchased","type":"event"},
+      {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"winner","type":"address"},{"indexed":false,"internalType":"uint256","name":"raffleNumber","type":"uint256"}],"name":"WinnerDrawn","type":"event"},
+      {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"aliases","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},
+      {"inputs":[{"internalType":"string","name":"_alias","type":"string"}],"name":"buyTicket","outputs":[],"stateMutability":"payable","type":"function"},
+      {"inputs":[{"internalType":"uint256","name":"_quantity","type":"uint256"},{"internalType":"string","name":"_alias","type":"string"}],"name":"buyTickets","outputs":[],"stateMutability":"payable","type":"function"},
+      {"inputs":[{"internalType":"uint256","name":"_quantity","type":"uint256"},{"internalType":"string","name":"_newAlias","type":"string"}],"name":"buyTicketsWithNewAlias","outputs":[],"stateMutability":"payable","type":"function"},
+      {"inputs":[],"name":"drawWinner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"nonpayable","type":"function"},
+      {"inputs":[{"internalType":"address","name":"_participant","type":"address"}],"name":"getAlias","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"},
+      {"inputs":[],"name":"getContractBalance","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+      {"inputs":[],"name":"getParticipants","outputs":[{"internalType":"address[]","name":"","type":"address[]"}],"stateMutability":"view","type":"function"},
+      {"inputs":[],"name":"getPastWinners","outputs":[{"internalType":"address[]","name":"","type":"address[]"}],"stateMutability":"view","type":"function"},
+      {"inputs":[{"internalType":"address","name":"_participant","type":"address"}],"name":"getTicketCount","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+      {"inputs":[],"name":"isRaffleOpen","outputs":[{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
+      {"inputs":[],"name":"owner","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+      {"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"participants","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+      {"inputs":[{"internalType":"uint256","name":"","type":"uint256"}],"name":"pastWinners","outputs":[{"internalType":"address","name":"","type":"address"}],"stateMutability":"view","type":"function"},
+      {"inputs":[],"name":"raffleCount","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+      {"inputs":[],"name":"refundParticipants","outputs":[],"stateMutability":"nonpayable","type":"function"},
+      {"inputs":[{"internalType":"uint256","name":"_newPrice","type":"uint256"}],"name":"setTicketPrice","outputs":[],"stateMutability":"nonpayable","type":"function"},
+      {"inputs":[],"name":"startRaffle","outputs":[],"stateMutability":"nonpayable","type":"function"},
+      {"inputs":[{"internalType":"address","name":"","type":"address"}],"name":"ticketCounts","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+      {"inputs":[],"name":"ticketPrice","outputs":[{"internalType":"uint256","name":"","type":"uint256"}],"stateMutability":"view","type":"function"},
+      {"inputs":[{"internalType":"string","name":"_newAlias","type":"string"}],"name":"updateAlias","outputs":[],"stateMutability":"nonpayable","type":"function"},
+      {"stateMutability":"payable","type":"receive"}
+    ];
+
+   
+    const contractAddress = "0x1Fa8151B96adEE65470404EC2F5628CC5ace4058";
+
+    // Configuração da rede Monad Testnet
+    const monadTestnet = {
+      chainId: "0x279f",
+      chainName: "Monad Testnet",
+      rpcUrls: ["https://testnet-rpc.monad.xyz"],
+      nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
+      blockExplorerUrls: ["https://testnet.monadexplorer.com"]
+    };
+
+    function App() {
+      const [account, setAccount] = useState(null);
+      const [contract, setContract] = useState(null);
+      const [isOwner, setIsOwner] = useState(false);
+      const [raffleOpen, setRaffleOpen] = useState(false);
+      const [ticketPrice, setTicketPrice] = useState("0");
+      const [raffleCount, setRaffleCount] = useState(0);
+      const [balance, setBalance] = useState("0");
+      const [participants, setParticipants] = useState([]);
+      const [pastWinners, setPastWinners] = useState([]);
+      const [newTicketPrice, setNewTicketPrice] = useState("");
+      const [error, setError] = useState("");
+      const [loading, setLoading] = useState(false);
+
+      // Conectar carteira e configurar rede
+      const connectWallet = async () => {
+        if (window.ethereum) {
+          try {
+            // Solicitar conexão com MetaMask
+            const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+            setAccount(accounts[0]);
+
+            // Configurar provedor e contrato
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            const contractInstance = new ethers.Contract(contractAddress, contractABI, signer);
+            setContract(contractInstance);
+
+            // Verificar rede
+            const { chainId } = await provider.getNetwork();
+            if (chainId !== BigInt(0x279f)) {
+              try {
+                await window.ethereum.request({
+                  method: "wallet_switchEthereumChain",
+                  params: [{ chainId: "0x279f" }],
+                });
+              } catch (switchError) {
+                if (switchError.code === 4902) {
+                  await window.ethereum.request({
+                    method: "wallet_addEthereumChain",
+                    params: [monadTestnet],
+                  });
+                }
+              }
+            }
+
+            // Verificar se é o owner
+            const owner = await contractInstance.owner();
+            setIsOwner(accounts[0].toLowerCase() === owner.toLowerCase());
+
+            // Carregar dados iniciais
+            await loadContractData(contractInstance);
+          } catch (err) {
+            setError("Erro ao conectar carteira: " + err.message);
+          }
+        } else {
+          setError("Por favor, instale o MetaMask.");
+        }
+      };
+
+      // Carregar dados do contrato
+      const loadContractData = async (contractInstance) => {
+        try {
+          const isOpen = await contractInstance.isRaffleOpen();
+          const price = await contractInstance.ticketPrice();
+          const count = await contractInstance.raffleCount();
+          const bal = await contractInstance.getContractBalance();
+          const parts = await contractInstance.getParticipants();
+          const winners = await contractInstance.getPastWinners();
+
+          setRaffleOpen(isOpen);
+          setTicketPrice(ethers.formatEther(price));
+          setRaffleCount(Number(count));
+          setBalance(ethers.formatEther(bal));
+
+          // Carregar detalhes dos participantes
+          const participantsData = await Promise.all(
+            parts.map(async (addr) => ({
+              address: addr,
+              tickets: Number(await contractInstance.getTicketCount(addr)),
+              alias: await contractInstance.getAlias(addr),
+            }))
+          );
+          setParticipants(participantsData);
+          setPastWinners(winners);
+        } catch (err) {
+          setError("Erro ao carregar dados: " + err.message);
+        }
+      };
+
+      // Iniciar sorteio
+      const handleStartRaffle = async () => {
+        if (!contract || !isOwner) return;
+        setLoading(true);
+        try {
+          const tx = await contract.startRaffle();
+          await tx.wait();
+          setRaffleOpen(true);
+          setRaffleCount((prev) => prev + 1);
+          setError("");
+          await loadContractData(contract);
+        } catch (err) {
+          setError("Erro ao iniciar sorteio: " + err.message);
+        }
+        setLoading(false);
+      };
+
+      // Atualizar preço do ingresso
+      const handleSetTicketPrice = async () => {
+        if (!contract || !isOwner || !newTicketPrice) return;
+        setLoading(true);
+        try {
+          const priceInWei = ethers.parseEther(newTicketPrice);
+          const tx = await contract.setTicketPrice(priceInWei);
+          await tx.wait();
+          setTicketPrice(newTicketPrice);
+          setNewTicketPrice("");
+          setError("");
+          await loadContractData(contract);
+        } catch (err) {
+          setError("Erro ao atualizar preço: " + err.message);
+        }
+        setLoading(false);
+      };
+
+      // Realizar sorteio
+      const handleDrawWinner = async () => {
+        if (!contract || !isOwner) return;
+        setLoading(true);
+        try {
+          const tx = await contract.drawWinner();
+          await tx.wait();
+          setError("");
+          await loadContractData(contract);
+        } catch (err) {
+          setError("Erro ao sortear vencedor: " + err.message);
+        }
+        setLoading(false);
+      };
+
+      // Reembolsar participantes
+      const handleRefund = async () => {
+        if (!contract || !isOwner) return;
+        setLoading(true);
+        try {
+          const tx = await contract.refundParticipants();
+          await tx.wait();
+          setError("");
+          await loadContractData(contract);
+        } catch (err) {
+          setError("Erro ao reembolsar: " + err.message);
+        }
+        setLoading(false);
+      };
+
+      // Interface do usuário
+      return (
+        <div className="min-h-screen bg-gray-100 p-6">
+          <div className="max-w-4xl mx-auto bg-white shadow-lg rounded-lg p-6">
+            <h1 className="text-3xl font-bold text-center mb-6">Sorteio do 0xGus - Admin</h1>
+
+            {!account ? (
+              <button
+                className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700"
+                onClick={connectWallet}
+              >
+                Conectar Carteira
+              </button>
+            ) : !isOwner ? (
+              <p className="text-red-600 text-center">Apenas o dono do contrato pode acessar este painel.</p>
+            ) : (
+              <div>
+                <p className="text-gray-700 mb-4">Conta conectada: {account}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                  <div>
+                    <p><strong>Sorteio Aberto:</strong> {raffleOpen ? "Sim" : "Não"}</p>
+                    <p><strong>Preço do Ingresso:</strong> {ticketPrice} MON</p>
+                    <p><strong>Número do Sorteio:</strong> {raffleCount}</p>
+                    <p><strong>Saldo do Contrato:</strong> {balance} MON</p>
+                  </div>
+                  <div>
+                    <button
+                      className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 disabled:bg-gray-400"
+                      onClick={handleStartRaffle}
+                      disabled={raffleOpen || loading}
+                    >
+                      {loading ? "Carregando..." : "Iniciar Sorteio"}
+                    </button>
+                    <button
+                      className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 disabled:bg-gray-400 mt-2"
+                      onClick={handleDrawWinner}
+                      disabled={!raffleOpen || loading}
+                    >
+                      {loading ? "Carregando..." : "Sortear Vencedor"}
+                    </button>
+                    <button
+                      className="w-full bg-yellow-600 text-white py-2 rounded-lg hover:bg-yellow-700 disabled:bg-gray-400 mt-2"
+                      onClick={handleRefund}
+                      disabled={!raffleOpen || loading}
+                    >
+                      {loading ? "Carregando..." : "Reembolsar Participantes"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mb-6">
+                  <h2 className="text-xl font-semibold mb-2">Atualizar Preço do Ingresso</h2>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={newTicketPrice}
+                    onChange={(e) => setNewTicketPrice(e.target.value)}
+                    placeholder="Novo preço em MON"
+                    className="w-full p-2 border rounded-lg mb-2"
+                  />
+                  <button
+                    className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
+                    onClick={handleSetTicketPrice}
+                    disabled={loading}
+                  >
+                    {loading ? "Carregando..." : "Atualizar Preço"}
+                  </button>
+                </div>
+
+                <h2 className="text-xl font-semibold mb-2">Participantes</h2>
+                <table className="w-full border-collapse mb-6">
+                  <thead>
+                    <tr className="bg-gray-200">
+                      <th className="border p-2">Endereço</th>
+                      <th className="border p-2">Ingressos</th>
+                      <th className="border p-2">Alias</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {participants.map((p) => (
+                      <tr key={p.address}>
+                        <td className="border p-2">{p.address}</td>
+                        <td className="border p-2">{p.tickets}</td>
+                        <td className="border p-2">{p.alias || "N/A"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                <h2 className="text-xl font-semibold mb-2">Vencedores Anteriores</h2>
+                <ul className="list-disc pl-5">
+                  {pastWinners.map((winner, index) => (
+                    <li key={index} className="text-gray-700">{winner}</li>
+                  ))}
+                </ul>
+
+                {error && <p className="text-red-600 mt-4">{error}</p>}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Renderizar o app
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
