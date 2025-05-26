@@ -185,7 +185,7 @@
         if (pastWinners.length > 0) {
           const lastWinner = pastWinners[pastWinners.length - 1];
           const lastWinnerTwitter = await contract.getAlias(lastWinner);
-          document.getElementById("last-winner-info").innerText = `Sorteio #${Number(count)}: ${shortenAddress(lastWinner)} (Twitter: ${lastWinnerTwitter || "N/A"})`;
+          document.getElementById("last-winner-info").innerText = `${shortenAddress(lastWinner)} (Twitter: ${lastWinnerTwitter || "N/A"})`;
         } else {
           document.getElementById("last-winner-info").innerText = "Nenhum ganhador ainda.";
         }
