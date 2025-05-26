@@ -4,18 +4,62 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Sorteio do 0xGus - Admin</title>
-  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.20.15 Babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.umd.min.js"></script>
 </head>
 <body style="font-family: Arial, sans-serif; margin: 20px; background-color: #f0f0f0;">
-  <div id="root"></div>
-  <script type="text/babel">
-    const { useState, useEffect } = React;
-    const { ethers } = window.ethers;
+  <div id="app" style="max-width: 800px; margin: 0 auto; background-color: #fff; padding: 20px; border: 1px solid #ccc;">
+    <h1 style="font-size: 24px; text-align: center; margin-bottom: 20px;">Sorteio do 0xGus - Admin</h1>
+    <div id="connect">
+      <button onclick="connectWallet()" style="width: 100%; padding: 10px; background-color: #007bff; color: #fff; border: none; cursor: pointer;">Conectar Carteira</button>
+    </div>
+    <div id="admin-panel" style="display: none;">
+      <p id="account" style="margin-bottom: 10px;"></p>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+        <div>
+          <p id="raffle-status"></p>
+          <p id="ticket-price"></p>
+          <p id="raffle-count"></p>
+          <p id="contract-balance"></p>
+        </div>
+        <div>
+          <button id="start-raffle" onclick="startRaffle()" style="width: 100%; padding: 10px; background-color: #28a745; color: #fff; border: none; cursor: pointer; margin-bottom: 10px;">Iniciar Sorteio</button>
+          <button id="draw-winner" onclick="drawWinner()" style="width: 100%; padding: 10px; background-color: #dc3545; color: #fff; border: none; cursor: pointer; margin-bottom: 10px;">Sortear Vencedor</button>
+          <button id="refund" onclick="refundParticipants()" style="width: 100%; padding: 10px; background-color: #ffc107; color: #fff; border: none; cursor: pointer;">Reembolsar Participantes</button>
+        </div>
+      </div>
+      <div style="margin-bottom: 20px;">
+        <h2 style="font-size: 18px; margin-bottom: 10px;">Atualizar Preço do Ingresso</h2>
+        <input id="new-ticket-price" type="number" step="0.01" placeholder="Novo preço em MON" style="width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ccc;">
+        <button onclick="setTicketPrice()" style="width: 100%; padding: 10px; background-color: #007bff; color: #fff; border: none; cursor: pointer;">Atualizar Preço</button>
+      </div>
+      <h2 style="font-size: 18px; margin-bottom: 10px;">Participantes</h2>
+      <table id="participants-table" style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+        <thead>
+          <tr style="background-color: #e0e0e0;">
+            <th style="border: 1px solid #ccc; padding: 8px;">Endereço</th>
+            <th style="border: 1px solid #ccc; padding: 8px;">Ingressos</th>
+            <th style="border: 1px solid #ccc; padding: 8px;">Alias</th>
+          </tr>
+        </thead>
+        <tbody id="participants-body"></tbody>
+      </table>
+      <h2 style="font-size: 18px; margin-bottom: 10px;">Vencedores Anteriores</h2>
+      <ul id="past-winners" style="padding-left: 20px;"></ul>
+      <p id="error" style="color: red; margin-top: 20px;"></p>
+    </div>
+    <div id="winner-popup" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center;">
+      <div style="background-color: #fff; padding: 20px; border: 1px solid #ccc; text-align: center;">
+        <h2 id="popup-title" style="font-size: 18px; margin-bottom: 10px;"></h2>
+        <p id="popup-address"></p>
+        <p id="popup-alias"></p>
+        <button onclick="closePopup()" style="padding: 10px; background-color: #007bff; color: #fff; border: none; cursor: pointer; margin-top: 10px;">Fechar</button>
+      </div>
+    </div>
+  </div>
 
-    // ABI do contrato
+  <script>
+    const { ethers } = window.ethers;
+    const contractAddress = "0x1Fa8151B96adEE65470404EC2F5628CC5ace4058";
     const contractABI = [
       {"inputs":[],"stateMutability":"nonpayable","type":"constructor"},
       {"anonymous":false,"inputs":[{"indexed":true,"internalType":"address","name":"participant","type":"address"},{"indexed":false,"internalType":"string","name":"newAlias","type":"string"}],"name":"AliasUpdated","type":"event"},
@@ -47,10 +91,6 @@
       {"stateMutability":"payable","type":"receive"}
     ];
 
-    // Endereço do contrato
-    const contractAddress = "0x1Fa8151B96adEE65470404EC2F5628CC5ace4058";
-
-    // Configuração da rede Monad Testnet
     const monadTestnet = {
       chainId: "0x279f",
       chainName: "Monad Testnet",
@@ -59,344 +99,194 @@
       blockExplorerUrls: ["https://testnet.monadexplorer.com"]
     };
 
-    function App() {
-      const [account, setAccount] = useState(null);
-      const [contract, setContract] = useState(null);
-      const [isOwner, setIsOwner] = useState(false);
-      const [raffleOpen, setRaffleOpen] = useState(false);
-      const [ticketPrice, setTicketPrice] = useState("0");
-      const [raffleCount, setRaffleCount] = useState(0);
-      const [balance, setBalance] = useState("0");
-      const [participants, setParticipants] = useState([]);
-      const [pastWinners, setPastWinners] = useState([]);
-      const [newTicketPrice, setNewTicketPrice] = useState("");
-      const [error, setError] = useState("");
-      const [loading, setLoading] = useState(false);
-      const [winnerPopup, setWinnerPopup] = useState(null);
+    let contract = null;
+    let isOwner = false;
 
-      // Conectar carteira e configurar rede
-      const connectWallet = async () => {
-        if (window.ethereum) {
+    async function connectWallet() {
+      if (!window.ethereum) {
+        showError("Por favor, instale o MetaMask.");
+        return;
+      }
+      try {
+        const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+        const account = accounts[0];
+        document.getElementById("account").innerText = `Conta conectada: ${account}`;
+
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        const signer = await provider.getSigner();
+        contract = new ethers.Contract(contractAddress, contractABI, signer);
+
+        const { chainId } = await provider.getNetwork();
+        if (chainId !== BigInt(0x279f)) {
           try {
-            const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
-            setAccount(accounts[0]);
-
-            const provider = new ethers.BrowserProvider(window.ethereum);
-            const signer = await provider.getSigner();
-            const contractInstance = new ethers.Contract(contractAddress, contractABI, signer);
-            setContract(contractInstance);
-
-            const { chainId } = await provider.getNetwork();
-            if (chainId !== BigInt(0x279f)) {
-              try {
-                await window.ethereum.request({
-                  method: "wallet_switchEthereumChain",
-                  params: [{ chainId: "0x279f" }],
-                });
-              } catch (switchError) {
-                if (switchError.code === 4902) {
-                  await window.ethereum.request({
-                    method: "wallet_addEthereumChain",
-                    params: [monadTestnet],
-                  });
-                }
-              }
+            await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: "0x279f" }] });
+          } catch (switchError) {
+            if (switchError.code === 4902) {
+              await window.ethereum.request({ method: "wallet_addEthereumChain", params: [monadTestnet] });
             }
-
-            const owner = await contractInstance.owner();
-            setIsOwner(accounts[0].toLowerCase() === owner.toLowerCase());
-            await loadContractData(contractInstance);
-          } catch (err) {
-            setError("Erro ao conectar carteira: " + err.message);
           }
-        } else {
-          setError("Por favor, instale o MetaMask.");
         }
-      };
 
-      // Carregar dados do contrato
-      const loadContractData = async (contractInstance) => {
-        try {
-          const isOpen = await contractInstance.isRaffleOpen();
-          const price = await contractInstance.ticketPrice();
-          const count = await contractInstance.raffleCount();
-          const bal = await contractInstance.getContractBalance();
-          let parts = [];
-          try {
-            parts = await contractInstance.getParticipants();
-            console.log("Participantes carregados:", parts);
-          } catch (err) {
-            console.warn("Erro ao carregar participantes:", err);
-            setError("Erro ao carregar participantes. A lista pode estar vazia ou o contrato pode estar com problemas.");
-          }
-          const winners = await contractInstance.getPastWinners();
-
-          setRaffleOpen(isOpen);
-          setTicketPrice(ethers.formatEther(price));
-          setRaffleCount(Number(count));
-          setBalance(ethers.formatEther(bal));
-
-          const participantsData = await Promise.all(
-            parts.map(async (addr) => ({
-              address: addr,
-              tickets: Number(await contractInstance.getTicketCount(addr)),
-              alias: await contractInstance.getAlias(addr),
-            }))
-          );
-          setParticipants(participantsData);
-          setPastWinners(winners);
-        } catch (err) {
-          setError(`Erro ao carregar dados do contrato: ${err.message}`);
+        const owner = await contract.owner();
+        isOwner = account.toLowerCase() === owner.toLowerCase();
+        if (!isOwner) {
+          showError("Apenas o dono do contrato pode acessar este painel.");
+          return;
         }
-      };
 
-      // Iniciar sorteio
-      const handleStartRaffle = async () => {
-        if (!contract || !isOwner) return;
-        setLoading(true);
-        try {
-          const tx = await contract.startRaffle();
-          await tx.wait();
-          setRaffleOpen(true);
-          setRaffleCount((prev) => prev + 1);
-          setError("");
-          await loadContractData(contract);
-        } catch (err) {
-          setError("Erro ao iniciar sorteio: " + err.message);
-        }
-        setLoading(false);
-      };
-
-      // Atualizar preço do ingresso
-      const handleSetTicketPrice = async () => {
-        if (!contract || !isOwner || !newTicketPrice) return;
-        setLoading(true);
-        try {
-          const priceInWei = ethers.parseEther(newTicketPrice);
-          const tx = await contract.setTicketPrice(priceInWei);
-          await tx.wait();
-          setTicketPrice(newTicketPrice);
-          setNewTicketPrice("");
-          setError("");
-          await loadContractData(contract);
-        } catch (err) {
-          setError("Erro ao atualizar preço: " + err.message);
-        }
-        setLoading(false);
-      };
-
-      // Realizar sorteio e exibir popup
-      const handleDrawWinner = async () => {
-        if (!contract || !isOwner) return;
-        setLoading(true);
-        try {
-          const tx = await contract.drawWinner();
-          const receipt = await tx.wait();
-          const winner = receipt.logs
-            .filter((log) => log.fragment && log.fragment.name === "WinnerDrawn")
-            .map((log) => contract.interface.parseLog(log).args.winner)[0];
-          const winnerAlias = await contract.getAlias(winner);
-          setWinnerPopup({ address: winner, alias: winnerAlias || "Sem alias" });
-          setError("");
-          await loadContractData(contract);
-        } catch (err) {
-          setError("Erro ao sortear vencedor: " + err.message);
-        }
-        setLoading(false);
-      };
-
-      // Reembolsar participantes
-      const handleRefund = async () => {
-        if (!contract || !isOwner) return;
-        setLoading(true);
-        try {
-          const tx = await contract.refundParticipants();
-          await tx.wait();
-          setError("");
-          await loadContractData(contract);
-        } catch (err) {
-          setError("Erro ao reembolsar: " + err.message);
-        }
-        setLoading(false);
-      };
-
-      // Fechar popup
-      const closePopup = () => {
-        setWinnerPopup(null);
-      };
-
-      // Interface do usuário
-      return (
-        <div style={{ maxWidth: "800px", margin: "0 auto", backgroundColor: "#fff", padding: "20px", border: "1px solid #ccc" }}>
-          <h1 style={{ fontSize: "24px", textAlign: "center", marginBottom: "20px" }}>Sorteio do 0xGus - Admin</h1>
-
-          {!account ? (
-            <button
-              style={{ width: "100%", padding: "10px", backgroundColor: "#007bff", color: "#fff", border: "none", cursor: "pointer" }}
-              onClick={connectWallet}
-            >
-              Conectar Carteira
-            </button>
-          ) : !isOwner ? (
-            <p style={{ color: "red", textAlign: "center" }}>Apenas o dono do contrato pode acessar este painel.</p>
-          ) : (
-            <div>
-              <p style={{ marginBottom: "10px" }}><strong>Conta conectada:</strong> {account}</p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
-                <div>
-                  <p><strong>Sorteio Aberto:</strong> {raffleOpen ? "Sim" : "Não"}</p>
-                  <p><strong>Preço do Ingresso:</strong> {ticketPrice} MON</p>
-                  <p><strong>Número do Sorteio:</strong> {raffleCount}</p>
-                  <p><strong>Saldo do Contrato:</strong> {balance} MON</p>
-                </div>
-                <div>
-                  <button
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      backgroundColor: raffleOpen || loading ? "#ccc" : "#28a745",
-                      color: "#fff",
-                      border: "none",
-                      cursor: raffleOpen || loading ? "not-allowed" : "pointer",
-                      marginBottom: "10px"
-                    }}
-                    onClick={handleStartRaffle}
-                    disabled={raffleOpen || loading}
-                  >
-                    {loading ? "Carregando..." : "Iniciar Sorteio"}
-                  </button>
-                  <button
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      backgroundColor: !raffleOpen || loading ? "#ccc" : "#dc3545",
-                      color: "#fff",
-                      border: "none",
-                      cursor: !raffleOpen || loading ? "not-allowed" : "pointer",
-                      marginBottom: "10px"
-                    }}
-                    onClick={handleDrawWinner}
-                    disabled={!raffleOpen || loading}
-                  >
-                    {loading ? "Carregando..." : "Sortear Vencedor"}
-                  </button>
-                  <button
-                    style={{
-                      width: "100%",
-                      padding: "10px",
-                      backgroundColor: !raffleOpen || loading ? "#ccc" : "#ffc107",
-                      color: "#fff",
-                      border: "none",
-                      cursor: !raffleOpen || loading ? "not-allowed" : "pointer"
-                    }}
-                    onClick={handleRefund}
-                    disabled={!raffleOpen || loading}
-                  >
-                    {loading ? "Carregando..." : "Reembolsar Participantes"}
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ marginBottom: "20px" }}>
-                <h2 style={{ fontSize: "18px", marginBottom: "10px" }}>Atualizar Preço do Ingresso</h2>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={newTicketPrice}
-                  onChange={(e) => setNewTicketPrice(e.target.value)}
-                  placeholder="Novo preço em MON"
-                  style={{ width: "100%", padding: "8px", marginBottom: "10px", border: "1px solid #ccc" }}
-                />
-                <button
-                  style={{
-                    width: "100%",
-                    padding: "10px",
-                    backgroundColor: loading ? "#ccc" : "#007bff",
-                    color: "#fff",
-                    border: "none",
-                    cursor: loading ? "not-allowed" : "pointer"
-                  }}
-                  onClick={handleSetTicketPrice}
-                  disabled={loading}
-                >
-                  {loading ? "Carregando..." : "Atualizar Preço"}
-                </button>
-              </div>
-
-              <h2 style={{ fontSize: "18px", marginBottom: "10px" }}>Participantes</h2>
-              <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "20px" }}>
-                <thead>
-                  <tr style={{ backgroundColor: "#e0e0e0" }}>
-                    <th style={{ border: "1px solid #ccc", padding: "8px" }}>Endereço</th>
-                    <th style={{ border: "1px solid #ccc", padding: "8px" }}>Ingressos</th>
-                    <th style={{ border: "1px solid #ccc", padding: "8px" }}>Alias</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {participants.map((p) => (
-                    <tr key={p.address}>
-                      <td style={{ border: "1px solid #ccc", padding: "8px" }}>{p.address}</td>
-                      <td style={{ border: "1px solid #ccc", padding: "8px" }}>{p.tickets}</td>
-                      <td style={{ border: "1px solid #ccc", padding: "8px" }}>{p.alias || "N/A"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <h2 style={{ fontSize: "18px", marginBottom: "10px" }}>Vencedores Anteriores</h2>
-              <ul style={{ paddingLeft: "20px" }}>
-                {pastWinners.map((winner, index) => (
-                  <li key={index} style={{ marginBottom: "5px" }}>{winner}</li>
-                ))}
-              </ul>
-
-              {error && <p style={{ color: "red", marginTop: "20px" }}>{error}</p>}
-
-              {winnerPopup && (
-                <div style={{
-                  position: "fixed",
-                  top: "0",
-                  left: "0",
-                  width: "100%",
-                  height: "100%",
-                  backgroundColor: "rgba(0,0,0,0.5)",
-                  display: "flex",
-                  justifyContent: "center",
-                  alignItems: "center"
-                }}>
-                  <div style={{
-                    backgroundColor: "#fff",
-                    padding: "20px",
-                    border: "1px solid #ccc",
-                    textAlign: "center"
-                  }}>
-                    <h2 style={{ fontSize: "18px", marginBottom: "10px" }}>Vencedor do Sorteio #{raffleCount}</h2>
-                    <p><strong>Endereço:</strong> {winnerPopup.address}</p>
-                    <p><strong>Alias:</strong> {winnerPopup.alias}</p>
-                    <button
-                      style={{
-                        padding: "10px",
-                        backgroundColor: "#007bff",
-                        color: "#fff",
-                        border: "none",
-                        cursor: "pointer",
-                        marginTop: "10px"
-                      }}
-                      onClick={closePopup}
-                    >
-                      Fechar
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      );
+        document.getElementById("connect").style.display = "none";
+        document.getElementById("admin-panel").style.display = "block";
+        await loadContractData();
+      } catch (err) {
+        showError("Erro ao conectar carteira: " + err.message);
+      }
     }
 
-    const root = ReactDOM.createRoot(document.getElementById("root"));
-    root.render(<App />);
+    async function loadContractData() {
+      try {
+        const isOpen = await contract.isRaffleOpen();
+        const price = await contract.ticketPrice();
+        const count = await contract.raffleCount();
+        const balance = await contract.getContractBalance();
+        let participants = [];
+        try {
+          participants = await contract.getParticipants();
+          console.log("Participantes carregados:", participants);
+        } catch (err) {
+          console.warn("Erro ao carregar participantes:", err);
+          showError("Erro ao carregar participantes. A lista pode estar vazia ou o contrato pode estar com problemas.");
+        }
+        const pastWinners = await contract.getPastWinners();
+
+        document.getElementById("raffle-status").innerText = `Sorteio Aberto: ${isOpen ? "Sim" : "Não"}`;
+        document.getElementById("ticket-price").innerText = `Preço do Ingresso: ${ethers.formatEther(price)} MON`;
+        document.getElementById("raffle-count").innerText = `Número do Sorteio: ${Number(count)}`;
+        document.getElementById("contract-balance").innerText = `Saldo do Contrato: ${ethers.formatEther(balance)} MON`;
+
+        document.getElementById("start-raffle").disabled = isOpen;
+        document.getElementById("draw-winner").disabled = !isOpen;
+        document.getElementById("refund").disabled = !isOpen;
+
+        const participantsBody = document.getElementById("participants-body");
+        participantsBody.innerHTML = "";
+        for (const addr of participants) {
+          const tickets = Number(await contract.getTicketCount(addr));
+          const alias = await contract.getAlias(addr);
+          const row = document.createElement("tr");
+          row.innerHTML = `
+            <td style="border: 1px solid #ccc; padding: 8px;">${addr}</td>
+            <td style="border: 1px solid #ccc; padding: 8px;">${tickets}</td>
+            <td style="border: 1px solid #ccc; padding: 8px;">${alias || "N/A"}</td>
+          `;
+          participantsBody.appendChild(row);
+        }
+
+        const pastWinnersList = document.getElementById("past-winners");
+        pastWinnersList.innerHTML = "";
+        pastWinners.forEach((winner) => {
+          const li = document.createElement("li");
+          li.innerText = winner;
+          li.style.marginBottom = "5px";
+          pastWinnersList.appendChild(li);
+        });
+      } catch (err) {
+        showError("Erro ao carregar dados do contrato: " + err.message);
+      }
+    }
+
+    async function startRaffle() {
+      if (!contract || !isOwner) return;
+      toggleButtons(true);
+      try {
+        const tx = await contract.startRaffle();
+        await tx.wait();
+        showError("");
+        await loadContractData();
+      } catch (err) {
+        showError("Erro ao iniciar sorteio: " + err.message);
+      }
+      toggleButtons(false);
+    }
+
+    async function setTicketPrice() {
+      if (!contract || !isOwner) return;
+      const newPrice = document.getElementById("new-ticket-price").value;
+      if (!newPrice) {
+        showError("Insira um preço válido.");
+        return;
+      }
+      toggleButtons(true);
+      try {
+        const priceInWei = ethers.parseEther(newPrice);
+        const tx = await contract.setTicketPrice(priceInWei nudo);
+        await tx.wait();
+        document.getElementById("new-ticket-price").value = "";
+        showError("");
+        await loadContractData();
+      } catch (err) {
+        showError("Erro ao atualizar preço: " + err.message);
+      }
+      toggleButtons(false);
+    }
+
+    async function drawWinner() {
+      if (!contract || !isOwner) return;
+      toggleButtons(true);
+      try {
+        const tx = await contract.drawWinner();
+        const receipt = await tx.wait();
+        const winner = receipt.logs
+          .filter((log) => log.fragment && log.fragment.name === "WinnerDrawn")
+          .map((log) => contract.interface.parseLog(log).args.winner)[0];
+        const winnerAlias = await contract.getAlias(winner);
+        const raffleCount = Number(await contract.raffleCount());
+        showWinnerPopup(winner, winnerAlias || "Sem alias", raffleCount);
+        showError("");
+        await loadContractData();
+      } catch (err) {
+        showError("Erro ao sortear vencedor: " + err.message);
+      }
+      toggleButtons(false);
+    }
+
+    async function refundParticipants() {
+      if (!contract || !isOwner) return;
+      toggleButtons(true);
+      try {
+        const tx = await contract.refundParticipants();
+        await tx.wait();
+        showError("");
+        await loadContractData();
+      } catch (err) {
+        showError("Erro ao reembolsar: " + err.message);
+      }
+      toggleButtons(false);
+    }
+
+    function showWinnerPopup(address, alias, raffleCount) {
+      document.getElementById("popup-title").innerText = `Vencedor do Sorteio #${raffleCount}`;
+      document.getElementById("popup-address").innerText = `Endereço: ${address}`;
+      document.getElementById("popup-alias").innerText = `Alias: ${alias}`;
+      document.getElementById("winner-popup").style.display = "flex";
+    }
+
+    function closePopup() {
+      document.getElementById("winner-popup").style.display = "none";
+    }
+
+    function showError(message) {
+      document.getElementById("error").innerText = message;
+    }
+
+    function toggleButtons(disabled) {
+      document.getElementById("start-raffle").disabled = disabled;
+      document.getElementById("draw-winner").disabled = disabled;
+      document.getElementById("refund").disabled = disabled;
+      document.querySelector("button[onclick='setTicketPrice()']").disabled = disabled;
+      document.getElementById("start-raffle").innerText = disabled ? "Carregando..." : "Iniciar Sorteio";
+      document.getElementById("draw-winner").innerText = disabled ? "Carregando..." : "Sortear Vencedor";
+      document.getElementById("refund").innerText = disabled ? "Carregando..." : "Reembolsar Participantes";
+    }
   </script>
 </body>
 </html>
