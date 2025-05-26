@@ -6,11 +6,10 @@
   <title>Sorteio do 0xGus - Admin</title>
   <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.20.15/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.20.15 Babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/ethers@6.7.0/dist/ethers.umd.min.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
+<body style="font-family: Arial, sans-serif; margin: 20px; background-color: #f0f0f0;">
   <div id="root"></div>
   <script type="text/babel">
     const { useState, useEffect } = React;
@@ -48,7 +47,7 @@
       {"stateMutability":"payable","type":"receive"}
     ];
 
-   
+    // Endereço do contrato
     const contractAddress = "0x1Fa8151B96adEE65470404EC2F5628CC5ace4058";
 
     // Configuração da rede Monad Testnet
@@ -73,22 +72,20 @@
       const [newTicketPrice, setNewTicketPrice] = useState("");
       const [error, setError] = useState("");
       const [loading, setLoading] = useState(false);
+      const [winnerPopup, setWinnerPopup] = useState(null);
 
       // Conectar carteira e configurar rede
       const connectWallet = async () => {
         if (window.ethereum) {
           try {
-            // Solicitar conexão com MetaMask
             const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
             setAccount(accounts[0]);
 
-            // Configurar provedor e contrato
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
             const contractInstance = new ethers.Contract(contractAddress, contractABI, signer);
             setContract(contractInstance);
 
-            // Verificar rede
             const { chainId } = await provider.getNetwork();
             if (chainId !== BigInt(0x279f)) {
               try {
@@ -106,11 +103,8 @@
               }
             }
 
-            // Verificar se é o owner
             const owner = await contractInstance.owner();
             setIsOwner(accounts[0].toLowerCase() === owner.toLowerCase());
-
-            // Carregar dados iniciais
             await loadContractData(contractInstance);
           } catch (err) {
             setError("Erro ao conectar carteira: " + err.message);
@@ -127,7 +121,14 @@
           const price = await contractInstance.ticketPrice();
           const count = await contractInstance.raffleCount();
           const bal = await contractInstance.getContractBalance();
-          const parts = await contractInstance.getParticipants();
+          let parts = [];
+          try {
+            parts = await contractInstance.getParticipants();
+            console.log("Participantes carregados:", parts);
+          } catch (err) {
+            console.warn("Erro ao carregar participantes:", err);
+            setError("Erro ao carregar participantes. A lista pode estar vazia ou o contrato pode estar com problemas.");
+          }
           const winners = await contractInstance.getPastWinners();
 
           setRaffleOpen(isOpen);
@@ -135,7 +136,6 @@
           setRaffleCount(Number(count));
           setBalance(ethers.formatEther(bal));
 
-          // Carregar detalhes dos participantes
           const participantsData = await Promise.all(
             parts.map(async (addr) => ({
               address: addr,
@@ -146,7 +146,7 @@
           setParticipants(participantsData);
           setPastWinners(winners);
         } catch (err) {
-          setError("Erro ao carregar dados: " + err.message);
+          setError(`Erro ao carregar dados do contrato: ${err.message}`);
         }
       };
 
@@ -185,13 +185,18 @@
         setLoading(false);
       };
 
-      // Realizar sorteio
+      // Realizar sorteio e exibir popup
       const handleDrawWinner = async () => {
         if (!contract || !isOwner) return;
         setLoading(true);
         try {
           const tx = await contract.drawWinner();
-          await tx.wait();
+          const receipt = await tx.wait();
+          const winner = receipt.logs
+            .filter((log) => log.fragment && log.fragment.name === "WinnerDrawn")
+            .map((log) => contract.interface.parseLog(log).args.winner)[0];
+          const winnerAlias = await contract.getAlias(winner);
+          setWinnerPopup({ address: winner, alias: winnerAlias || "Sem alias" });
           setError("");
           await loadContractData(contract);
         } catch (err) {
@@ -215,111 +220,181 @@
         setLoading(false);
       };
 
+      // Fechar popup
+      const closePopup = () => {
+        setWinnerPopup(null);
+      };
+
       // Interface do usuário
       return (
-        <div className="min-h-screen bg-gray-100 p-6">
-          <div className="max-w-4xl mx-auto bg-white shadow-lg rounded-lg p-6">
-            <h1 className="text-3xl font-bold text-center mb-6">Sorteio do 0xGus - Admin</h1>
+        <div style={{ maxWidth: "800px", margin: "0 auto", backgroundColor: "#fff", padding: "20px", border: "1px solid #ccc" }}>
+          <h1 style={{ fontSize: "24px", textAlign: "center", marginBottom: "20px" }}>Sorteio do 0xGus - Admin</h1>
 
-            {!account ? (
-              <button
-                className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700"
-                onClick={connectWallet}
-              >
-                Conectar Carteira
-              </button>
-            ) : !isOwner ? (
-              <p className="text-red-600 text-center">Apenas o dono do contrato pode acessar este painel.</p>
-            ) : (
-              <div>
-                <p className="text-gray-700 mb-4">Conta conectada: {account}</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                  <div>
-                    <p><strong>Sorteio Aberto:</strong> {raffleOpen ? "Sim" : "Não"}</p>
-                    <p><strong>Preço do Ingresso:</strong> {ticketPrice} MON</p>
-                    <p><strong>Número do Sorteio:</strong> {raffleCount}</p>
-                    <p><strong>Saldo do Contrato:</strong> {balance} MON</p>
-                  </div>
-                  <div>
-                    <button
-                      className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 disabled:bg-gray-400"
-                      onClick={handleStartRaffle}
-                      disabled={raffleOpen || loading}
-                    >
-                      {loading ? "Carregando..." : "Iniciar Sorteio"}
-                    </button>
-                    <button
-                      className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 disabled:bg-gray-400 mt-2"
-                      onClick={handleDrawWinner}
-                      disabled={!raffleOpen || loading}
-                    >
-                      {loading ? "Carregando..." : "Sortear Vencedor"}
-                    </button>
-                    <button
-                      className="w-full bg-yellow-600 text-white py-2 rounded-lg hover:bg-yellow-700 disabled:bg-gray-400 mt-2"
-                      onClick={handleRefund}
-                      disabled={!raffleOpen || loading}
-                    >
-                      {loading ? "Carregando..." : "Reembolsar Participantes"}
-                    </button>
-                  </div>
+          {!account ? (
+            <button
+              style={{ width: "100%", padding: "10px", backgroundColor: "#007bff", color: "#fff", border: "none", cursor: "pointer" }}
+              onClick={connectWallet}
+            >
+              Conectar Carteira
+            </button>
+          ) : !isOwner ? (
+            <p style={{ color: "red", textAlign: "center" }}>Apenas o dono do contrato pode acessar este painel.</p>
+          ) : (
+            <div>
+              <p style={{ marginBottom: "10px" }}><strong>Conta conectada:</strong> {account}</p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", marginBottom: "20px" }}>
+                <div>
+                  <p><strong>Sorteio Aberto:</strong> {raffleOpen ? "Sim" : "Não"}</p>
+                  <p><strong>Preço do Ingresso:</strong> {ticketPrice} MON</p>
+                  <p><strong>Número do Sorteio:</strong> {raffleCount}</p>
+                  <p><strong>Saldo do Contrato:</strong> {balance} MON</p>
                 </div>
-
-                <div className="mb-6">
-                  <h2 className="text-xl font-semibold mb-2">Atualizar Preço do Ingresso</h2>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={newTicketPrice}
-                    onChange={(e) => setNewTicketPrice(e.target.value)}
-                    placeholder="Novo preço em MON"
-                    className="w-full p-2 border rounded-lg mb-2"
-                  />
+                <div>
                   <button
-                    className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-                    onClick={handleSetTicketPrice}
-                    disabled={loading}
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      backgroundColor: raffleOpen || loading ? "#ccc" : "#28a745",
+                      color: "#fff",
+                      border: "none",
+                      cursor: raffleOpen || loading ? "not-allowed" : "pointer",
+                      marginBottom: "10px"
+                    }}
+                    onClick={handleStartRaffle}
+                    disabled={raffleOpen || loading}
                   >
-                    {loading ? "Carregando..." : "Atualizar Preço"}
+                    {loading ? "Carregando..." : "Iniciar Sorteio"}
+                  </button>
+                  <button
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      backgroundColor: !raffleOpen || loading ? "#ccc" : "#dc3545",
+                      color: "#fff",
+                      border: "none",
+                      cursor: !raffleOpen || loading ? "not-allowed" : "pointer",
+                      marginBottom: "10px"
+                    }}
+                    onClick={handleDrawWinner}
+                    disabled={!raffleOpen || loading}
+                  >
+                    {loading ? "Carregando..." : "Sortear Vencedor"}
+                  </button>
+                  <button
+                    style={{
+                      width: "100%",
+                      padding: "10px",
+                      backgroundColor: !raffleOpen || loading ? "#ccc" : "#ffc107",
+                      color: "#fff",
+                      border: "none",
+                      cursor: !raffleOpen || loading ? "not-allowed" : "pointer"
+                    }}
+                    onClick={handleRefund}
+                    disabled={!raffleOpen || loading}
+                  >
+                    {loading ? "Carregando..." : "Reembolsar Participantes"}
                   </button>
                 </div>
-
-                <h2 className="text-xl font-semibold mb-2">Participantes</h2>
-                <table className="w-full border-collapse mb-6">
-                  <thead>
-                    <tr className="bg-gray-200">
-                      <th className="border p-2">Endereço</th>
-                      <th className="border p-2">Ingressos</th>
-                      <th className="border p-2">Alias</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {participants.map((p) => (
-                      <tr key={p.address}>
-                        <td className="border p-2">{p.address}</td>
-                        <td className="border p-2">{p.tickets}</td>
-                        <td className="border p-2">{p.alias || "N/A"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                <h2 className="text-xl font-semibold mb-2">Vencedores Anteriores</h2>
-                <ul className="list-disc pl-5">
-                  {pastWinners.map((winner, index) => (
-                    <li key={index} className="text-gray-700">{winner}</li>
-                  ))}
-                </ul>
-
-                {error && <p className="text-red-600 mt-4">{error}</p>}
               </div>
-            )}
-          </div>
+
+              <div style={{ marginBottom: "20px" }}>
+                <h2 style={{ fontSize: "18px", marginBottom: "10px" }}>Atualizar Preço do Ingresso</h2>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={newTicketPrice}
+                  onChange={(e) => setNewTicketPrice(e.target.value)}
+                  placeholder="Novo preço em MON"
+                  style={{ width: "100%", padding: "8px", marginBottom: "10px", border: "1px solid #ccc" }}
+                />
+                <button
+                  style={{
+                    width: "100%",
+                    padding: "10px",
+                    backgroundColor: loading ? "#ccc" : "#007bff",
+                    color: "#fff",
+                    border: "none",
+                    cursor: loading ? "not-allowed" : "pointer"
+                  }}
+                  onClick={handleSetTicketPrice}
+                  disabled={loading}
+                >
+                  {loading ? "Carregando..." : "Atualizar Preço"}
+                </button>
+              </div>
+
+              <h2 style={{ fontSize: "18px", marginBottom: "10px" }}>Participantes</h2>
+              <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "20px" }}>
+                <thead>
+                  <tr style={{ backgroundColor: "#e0e0e0" }}>
+                    <th style={{ border: "1px solid #ccc", padding: "8px" }}>Endereço</th>
+                    <th style={{ border: "1px solid #ccc", padding: "8px" }}>Ingressos</th>
+                    <th style={{ border: "1px solid #ccc", padding: "8px" }}>Alias</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {participants.map((p) => (
+                    <tr key={p.address}>
+                      <td style={{ border: "1px solid #ccc", padding: "8px" }}>{p.address}</td>
+                      <td style={{ border: "1px solid #ccc", padding: "8px" }}>{p.tickets}</td>
+                      <td style={{ border: "1px solid #ccc", padding: "8px" }}>{p.alias || "N/A"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <h2 style={{ fontSize: "18px", marginBottom: "10px" }}>Vencedores Anteriores</h2>
+              <ul style={{ paddingLeft: "20px" }}>
+                {pastWinners.map((winner, index) => (
+                  <li key={index} style={{ marginBottom: "5px" }}>{winner}</li>
+                ))}
+              </ul>
+
+              {error && <p style={{ color: "red", marginTop: "20px" }}>{error}</p>}
+
+              {winnerPopup && (
+                <div style={{
+                  position: "fixed",
+                  top: "0",
+                  left: "0",
+                  width: "100%",
+                  height: "100%",
+                  backgroundColor: "rgba(0,0,0,0.5)",
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center"
+                }}>
+                  <div style={{
+                    backgroundColor: "#fff",
+                    padding: "20px",
+                    border: "1px solid #ccc",
+                    textAlign: "center"
+                  }}>
+                    <h2 style={{ fontSize: "18px", marginBottom: "10px" }}>Vencedor do Sorteio #{raffleCount}</h2>
+                    <p><strong>Endereço:</strong> {winnerPopup.address}</p>
+                    <p><strong>Alias:</strong> {winnerPopup.alias}</p>
+                    <button
+                      style={{
+                        padding: "10px",
+                        backgroundColor: "#007bff",
+                        color: "#fff",
+                        border: "none",
+                        cursor: "pointer",
+                        marginTop: "10px"
+                      }}
+                      onClick={closePopup}
+                    >
+                      Fechar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       );
     }
 
-    // Renderizar o app
     const root = ReactDOM.createRoot(document.getElementById("root"));
     root.render(<App />);
   </script>
